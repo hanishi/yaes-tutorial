@@ -1,168 +1,174 @@
-# YAES チュートリアル
+# YAES Tutorial
 
-[yaes](https://github.com/rcardin/yaes)（Yet Another Effect System）を学ぶためのハンズオンチュートリアルです。
+A hands-on tutorial for learning [yaes](https://github.com/rcardin/yaes) (Yet Another Effect System) — an algebraic effect system for Scala 3 that uses context parameters for direct-style effect management.
 
-## エフェクトシステムとは何か
+> **Why this tutorial exists**
+>
+> There is virtually no Japanese-language documentation on algebraic effect systems for Scala. Most resources on Cats Effect and ZIO are in English, and yaes — a newcomer that embraces Scala 3's native features over monadic abstractions — has none at all. This tutorial fills that gap with a hands-on, lesson-by-lesson introduction written entirely in Japanese. We believe yaes's lightweight, non-framework approach will resonate with Japanese developers who value clean, pragmatic code over heavy abstractions.
 
-### 「エフェクト」とは
+**[日本語版はこちら / Japanese version](ja/README.md)**
 
-純粋関数は入力から出力を計算するだけですが、実際のプログラムは**副作用**（side effect）を伴います。
+## What is an Effect System?
 
-- コンソールへの出力
-- ファイルの読み書き
-- 例外の送出
-- 状態の変更
-- 乱数の生成
-- 並行処理
+### "Effects"
 
-これらの副作用を**型で追跡し、制御する**仕組みがエフェクトシステムです。
+Pure functions just compute outputs from inputs, but real programs involve **side effects**:
 
-### 従来のアプローチとその課題
+- Printing to the console
+- Reading/writing files
+- Throwing exceptions
+- Mutating state
+- Generating random numbers
+- Concurrency
 
-Scala のエフェクト管理には、大きく2つの流れがあります。
+An effect system **tracks and controls these side effects through the type system**.
 
-**1. モナドベース（Cats Effect / ZIO）**
+### Traditional Approaches and Their Trade-offs
+
+Scala has two major traditions for managing effects.
+
+**1. Monadic (Cats Effect / ZIO)**
 
 ```scala
-// ZIO の例
+// ZIO example
 def program: ZIO[Console & Random, IOException, Unit] =
   for
     n    <- Random.nextInt
-    _    <- Console.printLine(s"乱数: $n")
+    _    <- Console.printLine(s"Random: $n")
   yield ()
 ```
 
-モナドスタイルでは `for`/`yield`（flatMap チェーン）で処理を組み立てます。型安全でエフェクトの追跡も万全ですが、以下の課題があります。
+The monadic style composes operations with `for`/`yield` (flatMap chains). It's type-safe and tracks effects well, but comes with costs:
 
-- **`for`/`yield` の強制** — 通常の `if`/`while`/`try` が使えず、専用のコンビネータが必要
-- **学習コスト** — モナド変換子、ファイバー、スコープなど独自の概念が多い
-- **エコシステムのロックイン** — ライブラリ全体が特定のエフェクト型に依存する
+- **`for`/`yield` required** — you can't use normal `if`/`while`/`try`; you need special combinators
+- **Steep learning curve** — monad transformers, fibers, scopes, and other framework-specific concepts
+- **Ecosystem lock-in** — your entire codebase depends on the specific effect type
 
-**2. ダイレクトスタイル（yaes / Kyo など）**
+**2. Direct style (yaes / Kyo etc.)**
 
 ```scala
-// yaes の例
+// yaes example
 def program(using Output, Random): Unit =
   val n = Random.nextInt
-  Output.printLn(s"乱数: $n")
+  Output.printLn(s"Random: $n")
 ```
 
-ダイレクトスタイルでは**普通の Scala コード**としてエフェクトを書きます。`for`/`yield` は不要で、`if`/`while`/`try` がそのまま使えます。
+Direct style lets you write effects as **ordinary Scala code**. No `for`/`yield` needed — `if`/`while`/`try` just work.
 
-### なぜ yaes なのか
+### Why yaes?
 
-| 特徴 | yaes | Cats Effect | ZIO |
-|------|------|-------------|-----|
-| スタイル | ダイレクト | モナディック | モナディック |
-| エフェクトの宣言 | `using` パラメータ | 型パラメータ `F[_]` | `ZIO[R, E, A]` |
-| 制御構文 | `if`/`while`/`try` | 専用コンビネータ | 専用コンビネータ |
-| 学習コスト | 低い | 高い | 高い |
-| Scala 3 活用度 | コンテキスト関数を全面活用 | Scala 2 由来 | Scala 2 由来 |
-| 依存関係 | なし（標準ライブラリのみ） | cats-core | zio |
+| Feature | yaes | Cats Effect | ZIO |
+|---------|------|-------------|-----|
+| Style | Direct | Monadic | Monadic |
+| Effect declaration | `using` parameters | Type parameter `F[_]` | `ZIO[R, E, A]` |
+| Control flow | `if`/`while`/`try` | Special combinators | Special combinators |
+| Learning curve | Low | High | High |
+| Scala 3 usage | Full use of context functions | Scala 2 heritage | Scala 2 heritage |
+| Dependencies | None (stdlib only) | cats-core | zio |
 
-yaes の最大の特徴は **Scala 3 のコンテキストパラメータ（`using`）をエフェクトの仕組みそのものとして使う**ことです。特別なラッパー型やモナドは不要で、普通の関数がそのままエフェクトフルな関数になります。
+yaes's key insight is **using Scala 3 context parameters (`using`) as the effect mechanism itself**. No special wrapper types or monads needed — ordinary functions become effectful functions.
 
-### 例外 vs Either vs Raise — 本当の違い
+### Exceptions vs Either vs Raise — The Real Difference
 
-エフェクトシステムに初めて触れる人がよく感じる疑問があります。
+If you're new to effect systems, you might be wondering:
 
-> 「例外でいいのでは？」「Either と何が違うの？」
+> "Why not just throw exceptions?" "How is this different from Either?"
 
-この疑問はもっともです。3つのアプローチを同じ例で比較してみましょう。
+Fair questions. Let's compare all three with the same example.
 
-**例外 — 書きやすいが、何が起きるか型から分からない**
+**Exceptions — easy to write, but errors are invisible in the types**
 
 ```scala
 def divide(a: Int, b: Int): Int =
-  if b == 0 then throw new ArithmeticException("ゼロ除算")
+  if b == 0 then throw new ArithmeticException("division by zero")
   a / b
 
 def calculate(x: Int): Int =
-  divide(divide(x, 2), 3)  // 簡潔だが、エラーの可能性が型に現れない
+  divide(divide(x, 2), 3)  // concise, but the type doesn't show it can fail
 ```
 
-例外はコードが簡潔で、エラーが自動的に呼び出し元に伝播します。しかし `calculate` の型シグネチャ `Int => Int` からは、この関数が失敗する可能性があることが分かりません。コンパイラはエラー処理を強制しません。
+Exceptions are concise and propagate automatically. But `calculate`'s signature `Int => Int` doesn't tell you it can fail. The compiler doesn't force you to handle errors.
 
-**Either — 型安全だが、コードが煩雑になる**
+**Either — type-safe, but syntactically heavy**
 
 ```scala
 def divide(a: Int, b: Int): Either[String, Int] =
-  if b == 0 then Left("ゼロ除算") else Right(a / b)
+  if b == 0 then Left("division by zero") else Right(a / b)
 
 def calculate(x: Int): Either[String, Int] =
-  divide(x, 2).flatMap(r => divide(r, 3))  // flatMap の連鎖が必要
+  divide(x, 2).flatMap(r => divide(r, 3))  // flatMap chains required
 ```
 
-`Either` はエラーの可能性を型で表現します。コンパイラがエラー処理を強制してくれます。しかし代償として、全ての計算を `flatMap` で繋ぐ必要があります。処理が増えるほどネストが深くなり、普通のコードとは見た目がかけ離れていきます。
+`Either` expresses errors in the types. The compiler forces you to handle them. But every computation must be chained with `flatMap`. As logic grows, nesting deepens and code looks nothing like normal Scala.
 
-**Raise — 例外の書きやすさ + Either の型安全性**
+**Raise — the ergonomics of exceptions + the type safety of Either**
 
 ```scala
 def divide(a: Int, b: Int): Int raises String =
-  if b == 0 then Raise.raise("ゼロ除算")
+  if b == 0 then Raise.raise("division by zero")
   a / b
 
 def calculate(x: Int): Int raises String =
-  divide(divide(x, 2), 3)  // 簡潔、かつエラーの可能性が型に現れる
+  divide(divide(x, 2), 3)  // concise AND errors are visible in the type
 ```
 
-`Raise` は**両方の良いところを兼ね備えています**。
+`Raise` gives you **both**:
 
-- 例外のように普通の関数呼び出しで書ける — `flatMap` は不要
-- エラーは自動的に呼び出し元に伝播する — 明示的な受け渡し不要
-- `raises String` が型シグネチャに現れる — コンパイラがエラー処理を強制
-- 内部的には `boundary`/`break` を使用 — 例外より高速（スタックトレース生成なし）
+- Write normal function calls like exceptions — no `flatMap` needed
+- Errors propagate automatically — no manual threading
+- `raises String` appears in the type signature — the compiler enforces error handling
+- Uses `boundary`/`break` internally — faster than exceptions (no stack trace generation)
 
-つまり、**Raise は「例外の人間工学」と「Either の型安全性」を同時に実現する仕組み**です。「例外でいい」でも「Either でいい」でもなく、両方の利点を取れるところが本質的な違いです。
+In short, **Raise gives you "exception ergonomics" and "Either type safety" at the same time**. It's not "exceptions or Either" — it's both.
 
-| | 書きやすさ | エラーの伝播 | 型安全性 | パフォーマンス |
+| | Ergonomics | Error propagation | Type safety | Performance |
 |---|---|---|---|---|
-| **例外** | 簡潔 | 自動 | なし | スタックトレースのコスト |
-| **Either** | flatMap が必要 | 手動（flatMap） | あり | 高速 |
-| **Raise** | 簡潔 | 自動 | あり | 高速（boundary/break） |
+| **Exceptions** | Concise | Automatic | None | Stack trace cost |
+| **Either** | Requires flatMap | Manual (flatMap) | Yes | Fast |
+| **Raise** | Concise | Automatic | Yes | Fast (boundary/break) |
 
-### Java 経験者向け: 検査例外との比較
+### For Java developers: Compared to Checked Exceptions
 
-Java から Scala に来た人なら、検査例外（checked exception）を思い出すかもしれません。
+If you're coming from Java, you might recall checked exceptions:
 
 ```java
-// Java の検査例外 — エラーがメソッドシグネチャに現れる
+// Java checked exceptions — errors appear in the method signature
 int divide(int a, int b) throws ArithmeticException {
-    if (b == 0) throw new ArithmeticException("ゼロ除算");
+    if (b == 0) throw new ArithmeticException("division by zero");
     return a / b;
 }
 ```
 
-一見、`Raise` と同じ発想です。「エラーの可能性を型で表現し、コンパイラが処理を強制する」。しかし Java の検査例外は実際には失敗しました。なぜでしょうか？
+At first glance, this is the same idea as `Raise` — make errors visible in the type and let the compiler enforce handling. But Java's checked exceptions failed in practice. Why?
 
-| | 検査例外（Java） | Raise（yaes） |
+| | Checked Exceptions (Java) | Raise (yaes) |
 |---|---|---|
-| **エラー型の合成** | 共通の親クラスが必要。結局 `throws Exception` になりがち | `Raise[A]` と `Raise[B]` を独立に宣言できる |
-| **伝播の手間** | 全メソッドに `throws` を書く必要がある | `using Raise[E]` がコンテキストパラメータで暗黙に伝播 |
-| **ラムダとの相性** | `stream.map(x -> mightThrow(x))` がコンパイルエラー | ラムダ内でも自然に使える |
-| **エラーの値** | 例外オブジェクトのみ | 任意の型（文字列、列挙型、ADT など） |
-| **パフォーマンス** | スタックトレース生成のコスト | boundary/break でジャンプ（スタックトレースなし） |
+| **Error type composition** | Requires a common superclass; everyone ends up with `throws Exception` | `Raise[A]` and `Raise[B]` declared independently |
+| **Propagation boilerplate** | Every method in the chain must declare `throws` | `using Raise[E]` propagates implicitly via context parameters |
+| **Lambda compatibility** | `stream.map(x -> mightThrow(x))` won't compile | Works naturally with lambdas |
+| **Error values** | Only exception objects | Any type — strings, enums, ADTs |
+| **Performance** | Stack trace generation cost | boundary/break jump (no stack trace) |
 
-Scala は Java の検査例外を意図的に廃止しました。`Raise` は検査例外の**正しかった部分**（コンパイラによるエラー追跡）を、**問題だった部分**（ボイラープレート、ラムダ非対応、合成の困難さ）なしに復活させたものと言えます。
+Scala intentionally dropped checked exceptions from Java. `Raise` brings back the **part that was right** (compiler-enforced error tracking) without the **parts that were wrong** (boilerplate, no lambda support, no composition).
 
 ```scala
-// Java 検査例外の発想を、Scala 3 で正しく実現したもの
+// Java's idea, done right in Scala 3
 def divide(a: Int, b: Int): Int raises String =
-  if b == 0 then Raise.raise("ゼロ除算")
+  if b == 0 then Raise.raise("division by zero")
   a / b
 ```
 
-## yaes の仕組み
+## How yaes Works
 
-### コアの構造
+### Core Structure
 
-yaes の核心はシンプルです。
+The core of yaes is simple:
 
 ```scala
-// エフェクトの「能力」を表すラッパー
+// A wrapper representing the "capability" to use an effect
 class Yaes[+F](val unsafe: F)
 
-// 各エフェクトは型エイリアスとして定義される
+// Each effect is defined as a type alias
 type Raise[E] = Yaes[Raise.Unsafe[E]]
 type State[S] = Yaes[State.Unsafe[S]]
 type Output   = Yaes[Output.Unsafe]
@@ -170,28 +176,28 @@ type Random   = Yaes[Random.Unsafe]
 // ...
 ```
 
-`Yaes[F]` は「`F` という能力が使える」というマーカーです。各エフェクトは内部に `Unsafe` トレイトを持ち、実際の処理を定義します。
+`Yaes[F]` is a marker meaning "the capability `F` is available." Each effect has an internal `Unsafe` trait that defines the actual operations.
 
-### エフェクトの宣言と使用
+### Declaring and Using Effects
 
-関数が必要とするエフェクトは `using` パラメータで宣言します。
+Functions declare their required effects as `using` parameters:
 
 ```scala
-// この関数は「失敗する可能性」と「乱数」を必要とする
+// This function requires "the ability to fail" and "randomness"
 def rollOrFail()(using Random, Raise[String]): Int =
   val n = Random.nextInt
-  if n % 2 == 0 then Raise.raise("偶数が出た！")
+  if n % 2 == 0 then Raise.raise("Rolled an even number!")
   n
 ```
 
-`using` は Scala 3 のコンテキストパラメータです。呼び出し側がエフェクトを提供しない限りコンパイルエラーになるため、**エフェクトの追跡がコンパイル時に保証されます**。
+`using` is Scala 3's context parameter mechanism. If the caller doesn't provide the effect, the compiler raises an error — **effect tracking is enforced at compile time**.
 
-### ハンドラによる実行
+### Running Effects with Handlers
 
-エフェクトフルな関数は、ハンドラ（`run`）で囲むことで実行されます。
+Effectful functions are executed by wrapping them in handlers (`run`):
 
 ```scala
-// ハンドラをネストして全エフェクトを提供
+// Nest handlers to provide all effects
 val result: Either[String, Int] = Random.run {
   Raise.either {
     rollOrFail()
@@ -199,40 +205,40 @@ val result: Either[String, Int] = Random.run {
 }
 ```
 
-ハンドラの役割は：
-1. **エフェクトの実装を提供する** — `Random.run` は実際の乱数生成器を注入する
-2. **エフェクトの結果を変換する** — `Raise.either` はエラーを `Either` に変換する
-3. **スコープを区切る** — ハンドラのブロックを抜けるとエフェクトは使えなくなる
+Handlers serve three roles:
+1. **Provide the implementation** — `Random.run` injects a real random number generator
+2. **Transform the result** — `Raise.either` converts errors into `Either`
+3. **Delimit the scope** — the effect is unavailable outside the handler block
 
-### `Raise` の内部動作
+### How `Raise` Works Internally
 
-`Raise` は yaes の中核エフェクトです。boundary/break メカニズムを使って、例外のオーバーヘッドなしに短絡処理を実現しています。
+`Raise` is yaes's core effect. It uses the boundary/break mechanism for short-circuiting without exception overhead:
 
 ```
-Raise.either { ... Raise.raise("エラー") ... }
+Raise.either { ... Raise.raise("error") ... }
 
-1. either が boundary を設定
-2. raise が break でそこまでジャンプ
-3. either がエラーを Left に包んで返す
+1. either sets up a boundary
+2. raise performs a break (jumps back to the boundary)
+3. either wraps the error in Left and returns
 ```
 
-従来の `throw`/`catch` と違い：
-- **型安全** — どんなエラーが起きるか型で分かる
-- **スタックトレースなし** — boundary/break はスタックトレースを生成しないため高速
-- **合成可能** — 複数のエラー型を自由に組み合わせられる
+Compared to traditional `throw`/`catch`:
+- **Type-safe** — the type tells you exactly what errors can occur
+- **No stack traces** — boundary/break doesn't generate stack traces, making it fast
+- **Composable** — freely combine multiple error types
 
-### エフェクトの合成
+### Composing Effects
 
-複数のエフェクトは `using` パラメータの列挙で自然に合成されます。
+Multiple effects compose naturally by listing `using` parameters:
 
 ```scala
-// 3つのエフェクトを必要とする関数
+// A function requiring three effects
 def game()(using Random, State[Int], Output): Unit =
   val coin = Random.nextBoolean
   if coin then State.update[Int](_ + 1)
-  Output.printLn(s"結果: ${if coin then "表" else "裏"}")
+  Output.printLn(s"Result: ${if coin then "heads" else "tails"}")
 
-// ハンドラのネストで全エフェクトを提供
+// Nest handlers to provide all effects
 Output.run {
   Random.run {
     State.run(0) {
@@ -242,27 +248,25 @@ Output.run {
 }
 ```
 
-モナドスタイルと異なり、エフェクトの数が増えてもコードの構造は変わりません。`using` が増えるだけです。
+Unlike monadic style, the code structure doesn't change as you add more effects. You just add more `using` parameters.
 
-## エフェクト一覧
+## Effect Catalog
 
-yaes が提供する主なエフェクトです。
+### Raise — Typed Errors
 
-### Raise — 型付きエラー
-
-計算を型付きエラーで短絡させます。`Either` のダイレクトスタイル版です。
+Short-circuit computations with typed errors. Direct-style `Either`.
 
 ```scala
 def divide(a: Int, b: Int): Int raises String =
-  if b == 0 then Raise.raise("ゼロ除算")
+  if b == 0 then Raise.raise("division by zero")
   a / b
 
-Raise.either { divide(10, 0) } // Left("ゼロ除算")
+Raise.either { divide(10, 0) } // Left("division by zero")
 ```
 
-### State — 状態管理
+### State — State Management
 
-ミュータブルな状態を制御された形で扱います。
+Controlled mutable state.
 
 ```scala
 val (finalState, result) = State.run(0) {
@@ -273,66 +277,66 @@ val (finalState, result) = State.run(0) {
 // finalState = 10, result = 10
 ```
 
-### Output / Input — コンソール I/O
+### Output / Input — Console I/O
 
-標準入出力をエフェクトとして扱います。テスト時にモック実装に差し替えられます。
+Console I/O as effects. Swappable with mock implementations for testing.
 
 ```scala
 Output.run {
-  Output.printLn("こんにちは")
+  Output.printLn("Hello")
 }
 ```
 
-### Random / Clock — 乱数と時刻
+### Random / Clock — Randomness and Time
 
-乱数生成と時刻取得をエフェクトとして扱います。
+Random number generation and time access as effects.
 
 ```scala
 Random.run {
-  val n = Random.nextInt  // 乱数
+  val n = Random.nextInt
 }
 Clock.run {
-  val now = Clock.now     // 現在時刻 (Instant)
+  val now = Clock.now  // Instant
 }
 ```
 
-### Resource — リソース管理
+### Resource — Resource Management
 
-リソースの取得と解放を保証します。エラーが起きても解放処理が確実に実行されます。
+Guarantees resource cleanup. Release actions run even when errors occur.
 
 ```scala
 Resource.run {
   val conn = Resource.acquire(new MyConnection())
   conn.query("SELECT 1")
-} // ブロックを抜けると自動的にクローズ
+} // automatically closed when the block exits
 ```
 
-### Async — 構造化並行処理（Java 24+）
+### Async — Structured Concurrency (Java 24+)
 
-Java 24 の `StructuredTaskScope` を活用した構造化並行処理です。
+Structured concurrency using Java 24's `StructuredTaskScope`.
 
 ```scala
 Async.run {
   val (a, b) = Async.par(
-    { 重い計算1() },
-    { 重い計算2() }
+    { heavyComputation1() },
+    { heavyComputation2() }
   )
-  // 両方が完了するまで待つ。片方が失敗したらもう片方もキャンセル。
+  // Waits for both. If one fails, the other is cancelled.
 }
 ```
 
-## テスタビリティ — エフェクトシステム最大の実用的メリット
+## Testability — The Biggest Practical Benefit
 
-エフェクトシステムを使う最も実用的な理由は**テスト容易性**です。
+The most practical reason to use an effect system is **testability**.
 
-エフェクトは `using` パラメータで注入されるため、テスト時に本物の実装をモック（偽物）に差し替えられます。これは DI（依存性注入）コンテナなしで実現される、言語レベルの依存性注入です。
+Effects are injected via `using` parameters, so you can swap real implementations with mocks at test time. This is language-level dependency injection — no DI container needed.
 
-### モックの作り方
+### Creating Mocks
 
-各エフェクトの `Unsafe` トレイトを実装して `Yaes` で包むだけです。
+Just implement the `Unsafe` trait and wrap it in `Yaes`:
 
 ```scala
-// 常に同じ値を返す Random モック
+// A Random mock that always returns the same value
 def fixedRandom(value: Int): Random =
   new Yaes(new Random.Unsafe {
     def nextInt(): Int = value
@@ -341,7 +345,7 @@ def fixedRandom(value: Int): Random =
     def nextLong(): Long = value.toLong
   })
 
-// 出力をバッファに記録する Output モック
+// An Output mock that captures output to a buffer
 def bufferedOutput(): (Output, () => List[String]) =
   val buffer = scala.collection.mutable.ListBuffer.empty[String]
   val output: Output = new Yaes(new Output.Unsafe {
@@ -353,97 +357,97 @@ def bufferedOutput(): (Output, () => List[String]) =
   (output, () => buffer.toList)
 ```
 
-### テストの書き方
+### Writing Tests
 
 ```scala
 class MyTests extends munit.FunSuite:
 
-  // Raise: either でエラーパスを検証
-  test("空のユーザー名を拒否する") {
+  // Raise: use either to verify error paths
+  test("rejects empty username") {
     val result = Raise.either { validateUsername("") }
-    assertEquals(result, Left("ユーザー名は必須です"))
+    assertEquals(result, Left("Username is required"))
   }
 
-  // Random: モックを注入して決定的にテスト
-  test("出目 6 で大当たり") {
+  // Random: inject a mock for deterministic tests
+  test("roll 6 is a jackpot") {
     given Random = fixedRandom(5) // (5 % 6).abs + 1 = 6
     val result = Raise.either { luckyMessage() }
-    assertEquals(result, Right("大当たり！"))
+    assertEquals(result, Right("Jackpot!"))
   }
 
-  // Output: バッファで出力を検証
-  test("正しいメッセージを出力する") {
+  // Output: capture output in a buffer
+  test("outputs correct message") {
     val (testOutput, getLines) = bufferedOutput()
     given Output = testOutput
-    greetUser("花子")
-    assert(getLines().head.contains("花子"))
+    greetUser("Alice")
+    assert(getLines().head.contains("Alice"))
   }
 
-  // State: 最終状態と結果の両方を検証
-  test("正しい回数インクリメントする") {
+  // State: assert on both final state and result
+  test("increments correctly") {
     val (finalState, result) = State.run(0) { incrementN(5) }
     assertEquals(finalState, 5)
   }
 ```
 
-フレームワーク固有のモック機構（Mockito 等）は不要です。エフェクトの仕組み自体がモックをネイティブにサポートしています。
+No framework-specific mock libraries (Mockito etc.) needed. The effect system natively supports mocking.
 
-## 前提条件
+## Prerequisites
 
-- [scala-cli](https://scala-cli.virtuslab.org/) がインストール済みであること
-- Java 21 以上（レッスン 1〜7）
-- Java 24 以上（レッスン 8：構造化並行処理）
+- [scala-cli](https://scala-cli.virtuslab.org/) installed
+- Java 21+ (lessons 1–7)
+- Java 24+ (lesson 8: structured concurrency)
 
-## レッスン一覧
+## Lessons
 
-| レッスン | 内容 |
-|----------|------|
-| lesson1  | **Raise による型付きエラーハンドリング** — `raise`, `run`, `fold`, `either`, `raises` 型, `.value`, `ensure`, `catching` |
-| lesson2  | **Raise 応用パターン** — `recover`, `withDefault`, `withError`, `accumulate`, `traced` |
-| lesson3  | **State による状態管理** — `run`, `get`, `set`, `update`, `use` |
-| lesson4  | **コンソール入出力** — `Output.printLn`, `Input.readLn`（対話型） |
-| lesson5  | **乱数と時計** — `Random`, `Clock` |
-| lesson6  | **エフェクトの合成** — 複数エフェクトの組み合わせ、コイントスゲーム |
-| lesson7  | **リソース管理** — `Resource.install`, `acquire`, LIFO 解放順序 |
-| lesson8  | **構造化並行処理** — `Async.fork`, `par`, `race`, `timeout`（要 Java 24+） |
-| lesson9  | **テスタビリティ** — モック実装の作り方、エフェクトフルなコードのテスト手法 |
+| Lesson  | Topic |
+|---------|-------|
+| lesson1 | **Typed Error Handling with Raise** — `raise`, `run`, `fold`, `either`, `raises` type, `.value`, `ensure`, `catching` |
+| lesson2 | **Advanced Raise Patterns** — `recover`, `withDefault`, `withError`, `accumulate`, `traced` |
+| lesson3 | **Stateful Computation with State** — `run`, `get`, `set`, `update`, `use` |
+| lesson4 | **Console I/O** — `Output.printLn`, `Input.readLn` (interactive) |
+| lesson5 | **Random and Clock** — `Random`, `Clock` |
+| lesson6 | **Composing Multiple Effects** — multi-effect functions, coin flip game |
+| lesson7 | **Resource Management** — `Resource.install`, `acquire`, LIFO release order |
+| lesson8 | **Structured Concurrency** — `Async.fork`, `par`, `race`, `timeout` (requires Java 24+) |
+| lesson9 | **Testability** — creating mocks, testing effectful code |
 
-## 実行方法
+## Running
 
 ```bash
-# レッスン一覧を表示
+# Show lesson index
 scala-cli run . --main-class index
 
-# 各レッスンを実行
+# Run individual lessons
 scala-cli run . --main-class lesson1
 scala-cli run . --main-class lesson2
 # ...
 scala-cli run . --main-class lesson9
 
-# テストを実行
+# Run tests
 scala-cli test .
 ```
 
-## プロジェクト構成
+## Project Structure
 
 ```
-project.scala                  # ビルド設定（Scala 3.8.1 + yaes-core + munit）
-main.scala                     # レッスン一覧
-lesson1_raise.scala            # Raise 基礎
-lesson2_raise_advanced.scala   # Raise 応用
+project.scala                  # Build config (Scala 3.8.1 + yaes-core + munit)
+main.scala                     # Lesson index
+lesson1_raise.scala            # Raise basics
+lesson2_raise_advanced.scala   # Raise advanced
 lesson3_state.scala            # State
 lesson4_io.scala               # Output / Input
 lesson5_random_clock.scala     # Random / Clock
-lesson6_composing.scala        # エフェクト合成
+lesson6_composing.scala        # Effect composition
 lesson7_resource.scala         # Resource
-lesson8_async.scala            # Async（要 Java 24+）
-lesson9_testing.scala          # テスタビリティ
-tests/ExampleTests.test.scala  # munit テスト
+lesson8_async.scala            # Async (requires Java 24+)
+lesson9_testing.scala          # Testability
+tests/ExampleTests.test.scala  # munit tests
+ja/                            # Japanese version (日本語版)
 ```
 
-## 参考リンク
+## Links
 
-- [yaes GitHub](https://github.com/rcardin/yaes) — ソースコードとドキュメント
-- [Scala 3 コンテキスト関数](https://docs.scala-lang.org/scala3/reference/contextual/context-functions.html) — yaes の基盤となる言語機能
-- [boundary/break (SIP-2)](https://docs.scala-lang.org/sips/unroll-default-arguments.html) — `Raise` が内部で使用するメカニズム
-- [JEP 505: Structured Concurrency](https://openjdk.org/jeps/505) — `Async` が基盤とする Java 24 の機能
+- [yaes GitHub](https://github.com/rcardin/yaes) — Source code and documentation
+- [Scala 3 Context Functions](https://docs.scala-lang.org/scala3/reference/contextual/context-functions.html) — The language feature yaes is built on
+- [JEP 505: Structured Concurrency](https://openjdk.org/jeps/505) — The Java 24 feature behind `Async`

@@ -1,35 +1,35 @@
-// YAES チュートリアル — レッスン一覧
+// YAES Tutorial — Lesson Index
 //
-// 各レッスンの実行方法:
+// Run each lesson with:
 //   scala-cli run . --main-class lesson1
 //   scala-cli run . --main-class lesson2
 //   ...
 //
-// レッスン:
-//   lesson1 — Raise による型付きエラーハンドリング
-//   lesson2 — Raise 応用パターン
-//   lesson3 — State による状態管理
-//   lesson4 — Output / Input によるコンソール入出力
-//   lesson5 — Random と Clock エフェクト
-//   lesson6 — 複数エフェクトの合成
-//   lesson7 — リソース管理
-//   lesson8 — 構造化並行処理（要 Java 24+）
-//   lesson9 — テスタビリティ
+// Lessons:
+//   lesson1 — Typed Error Handling with Raise
+//   lesson2 — Advanced Raise Patterns
+//   lesson3 — Stateful Computation with State
+//   lesson4 — Console I/O with Output and Input
+//   lesson5 — Random and Clock Effects
+//   lesson6 — Composing Multiple Effects
+//   lesson7 — Resource Management
+//   lesson8 — Structured Concurrency with Async (requires Java 24+)
+//   lesson9 — Testability
 
 @main def index(): Unit =
-  println("YAES チュートリアル")
-  println("==================")
+  println("YAES Tutorial")
+  println("=============")
   println()
-  println("各レッスンの実行方法:")
-  println("  scala-cli run . --main-class lesson1   — Raise による型付きエラーハンドリング")
-  println("  scala-cli run . --main-class lesson2   — Raise 応用パターン")
-  println("  scala-cli run . --main-class lesson3   — State による状態管理")
-  println("  scala-cli run . --main-class lesson4   — コンソール入出力（対話型）")
-  println("  scala-cli run . --main-class lesson5   — 乱数と時計")
-  println("  scala-cli run . --main-class lesson6   — エフェクトの合成")
-  println("  scala-cli run . --main-class lesson7   — リソース管理")
-  println("  scala-cli run . --main-class lesson8   — 構造化並行処理（要 Java 24+）")
-  println("  scala-cli run . --main-class lesson9   — テスタビリティ")
+  println("Run each lesson with:")
+  println("  scala-cli run . --main-class lesson1   — Typed Error Handling with Raise")
+  println("  scala-cli run . --main-class lesson2   — Advanced Raise Patterns")
+  println("  scala-cli run . --main-class lesson3   — Stateful Computation with State")
+  println("  scala-cli run . --main-class lesson4   — Console I/O (interactive)")
+  println("  scala-cli run . --main-class lesson5   — Random and Clock")
+  println("  scala-cli run . --main-class lesson6   — Composing Multiple Effects")
+  println("  scala-cli run . --main-class lesson7   — Resource Management")
+  println("  scala-cli run . --main-class lesson8   — Structured Concurrency (requires Java 24+)")
+  println("  scala-cli run . --main-class lesson9   — Testability")
   println()
-  println("テストの実行:")
+  println("Run tests:")
   println("  scala-cli test .")

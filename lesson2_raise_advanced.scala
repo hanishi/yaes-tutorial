@@ -1,136 +1,136 @@
-// レッスン 2: Raise 応用パターン
+// Lesson 2: Advanced Raise Patterns
 //
-// レッスン 1 の基礎を踏まえ、リカバリ、エラー型変換、
-// エラー蓄積、トレース機能を学びます。
+// Building on Lesson 1, we explore recovery, error transformation,
+// error accumulation, and tracing.
 
 import in.rcard.yaes.*
 
 @main def lesson2(): Unit =
-  println("=== レッスン 2: Raise 応用パターン ===")
+  println("=== Lesson 2: Advanced Raise Patterns ===")
   println()
 
-  // --- Raise.recover: エラーを処理してフォールバック値を返す ---
+  // --- Raise.recover: handle errors and return a fallback ---
   println("--- Raise.recover ---")
   val recovered: Int = Raise.recover {
-    Raise.raise("何かが壊れた")
+    Raise.raise("something broke")
     42
   }(error => -1)
-  println(s"リカバリ済み: $recovered") // -1
+  println(s"recovered: $recovered") // -1
 
   val notRecovered: Int = Raise.recover {
-    42 // エラーは発生しない
+    42 // no error raised
   }(error => -1)
-  println(s"エラーなし:   $notRecovered") // 42
+  println(s"no error:  $notRecovered") // 42
   println()
 
-  // --- Raise.withDefault: デフォルト値によるシンプルなリカバリ ---
+  // --- Raise.withDefault: simpler recovery with a default value ---
   println("--- Raise.withDefault ---")
   val defaulted: Int = Raise.withDefault(0) {
-    Raise.raise("エラー")
+    Raise.raise("error")
     42
   }
-  println(s"withDefault (エラー時): $defaulted") // 0
+  println(s"withDefault (error): $defaulted") // 0
 
   val noDefault: Int = Raise.withDefault(0) {
     42
   }
-  println(s"withDefault (正常時):   $noDefault") // 42
+  println(s"withDefault (ok):    $noDefault") // 42
   println()
 
-  // --- Raise.withError: エラー型の変換 ---
-  // 異なるエラー型を持つ関数を合成するときに使う
+  // --- Raise.withError: transform error types ---
+  // Useful when composing functions with different error types
   println("--- Raise.withError ---")
   sealed trait AppError
   case class ValidationError(msg: String) extends AppError
   case class ParseError(msg: String) extends AppError
 
   def parseInt(s: String): Int raises String =
-    Raise.catching(s.toInt)(ex => s"数値ではありません: $s")
+    Raise.catching(s.toInt)(ex => s"Not a number: $s")
 
-  // parseInt の String エラーを AppError に変換
+  // Transform String errors from parseInt into AppError
   val transformed: Either[AppError, Int] = Raise.either {
     Raise.withError[AppError, String, Int](e => ParseError(e)) {
       parseInt("abc")
     }
   }
-  println(s"withError: $transformed") // Left(ParseError(数値ではありません: abc))
+  println(s"withError: $transformed") // Left(ParseError(Not a number: abc))
 
   val transformedOk: Either[AppError, Int] = Raise.either {
     Raise.withError[AppError, String, Int](e => ParseError(e)) {
       parseInt("42")
     }
   }
-  println(s"withError (正常): $transformedOk") // Right(42)
+  println(s"withError (ok): $transformedOk") // Right(42)
   println()
 
-  // --- Raise.accumulate: 短絡せず全てのエラーを収集する ---
-  // 通常 Raise は最初のエラーで停止するが、accumulate は全エラーを集める
+  // --- Raise.accumulate: collect ALL errors instead of short-circuiting ---
+  // Normally Raise stops at the first error. accumulate gathers them all.
   println("--- Raise.accumulate ---")
 
   case class FormData(name: String, age: Int, email: String)
 
-  // エラー蓄積によるバリデーション — 3つのフィールドが独立に検証される
+  // Validation with accumulation — all three fields validated independently
   val allErrors: Either[List[String], FormData] = Raise.either {
     Raise.accumulate[List, String, FormData] {
       import scala.language.implicitConversions
       val name: Raise.LazyValue[String] = Raise.accumulating {
-        Raise.ensure("".nonEmpty)("名前は必須です")
+        Raise.ensure("".nonEmpty)("Name is required")
         ""
       }
       val age: Raise.LazyValue[Int] = Raise.accumulating {
-        Raise.ensure(-5 >= 0)("年齢は0以上でなければなりません")
+        Raise.ensure(-5 >= 0)("Age must be non-negative")
         -5
       }
       val email: Raise.LazyValue[String] = Raise.accumulating {
-        val e = "メールじゃない"
-        Raise.ensure(e.contains("@"))("メールアドレスに @ が必要です")
+        val e = "not-an-email"
+        Raise.ensure(e.contains("@"))("Email must contain @")
         e
       }
-      // LazyValue を使用する時点で、蓄積されたエラーが raise される
+      // When we use these LazyValues, accumulated errors are raised
       FormData(name, age, email)
     }
   }
-  println(s"全エラー: $allErrors")
-  // Left(List(名前は必須です, 年齢は0以上でなければなりません, メールアドレスに @ が必要です))
+  println(s"All errors: $allErrors")
+  // Left(List(Name is required, Age must be non-negative, Email must contain @))
 
-  // エラーなしの蓄積 — 全フィールドが正常
+  // Successful accumulation — no errors
   val allOk: Either[List[String], FormData] = Raise.either {
     Raise.accumulate[List, String, FormData] {
       import scala.language.implicitConversions
       val name: Raise.LazyValue[String] = Raise.accumulating {
-        val n = "太郎"
-        Raise.ensure(n.nonEmpty)("名前は必須です")
+        val n = "Alice"
+        Raise.ensure(n.nonEmpty)("Name is required")
         n
       }
       val age: Raise.LazyValue[Int] = Raise.accumulating {
         val a = 30
-        Raise.ensure(a >= 0)("年齢は0以上でなければなりません")
+        Raise.ensure(a >= 0)("Age must be non-negative")
         a
       }
       val email: Raise.LazyValue[String] = Raise.accumulating {
-        val e = "taro@example.com"
-        Raise.ensure(e.contains("@"))("メールアドレスに @ が必要です")
+        val e = "alice@example.com"
+        Raise.ensure(e.contains("@"))("Email must contain @")
         e
       }
       FormData(name, age, email)
     }
   }
-  println(s"全て正常: $allOk")
-  // Right(FormData(太郎,30,taro@example.com))
+  println(s"All ok:     $allOk")
+  // Right(FormData(Alice,30,alice@example.com))
   println()
 
-  // --- Raise.traced: エラーにスタックトレース情報を付加する ---
-  // デフォルトでは Raise エラーはスタックトレースを持たない（boundary/break を使用）。
-  // traced を使うとエラー発生時にスタックトレースが出力される。
+  // --- Raise.traced: adds stack trace information to errors ---
+  // By default, Raise errors carry no stack trace (boundary/break).
+  // traced wraps them so you get a stack trace printed on error.
   println("--- Raise.traced ---")
   val traced: Either[String, Int] = Raise.either {
     Raise.traced {
-      Raise.raise("トレース付きエラー")
+      Raise.raise("traced error")
       42
     }
   }
-  println(s"traced 結果: $traced") // Left(トレース付きエラー)
-  // （上にデフォルトの TraceWith ハンドラによるスタックトレースが出力されている）
+  println(s"traced result: $traced") // Left(traced error)
+  // (A stack trace was printed above by the default TraceWith handler)
   println()
 
-  println("=== レッスン 2 終了 ===")
+  println("=== End of Lesson 2 ===")

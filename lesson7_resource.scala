@@ -1,124 +1,124 @@
-// レッスン 7: リソース管理
+// Lesson 7: Resource Management
 //
-// Resource エフェクトはエラー発生時でもクリーンアップ処理を確実に実行します。
-// リソースは LIFO（後入れ先出し）順で解放されます。
+// The Resource effect ensures cleanup actions run even when errors occur.
+// Resources are released in LIFO (last-in, first-out) order.
 
 import in.rcard.yaes.*
 import java.io.Closeable
 
 @main def lesson7(): Unit =
-  println("=== レッスン 7: リソース管理 ===")
+  println("=== Lesson 7: Resource Management ===")
   println()
 
-  // --- Resource.install: カスタムの取得/解放 ---
-  // install(取得)(解放) — 取得を実行し、解放を後で実行するよう登録
+  // --- Resource.install: custom acquire/release ---
+  // install(acquire)(release) runs acquire, registers release for later
   println("--- Resource.install ---")
   Resource.run {
     val handle = Resource.install {
-      println("  リソース A を取得")
-      "リソースA"
+      println("  Acquiring resource A")
+      "ResourceA"
     } { name =>
-      println(s"  $name を解放")
+      println(s"  Releasing $name")
     }
-    println(s"  $handle を使用中")
+    println(s"  Using $handle")
   }
-  // 出力: 取得 → 使用 → 解放
+  // Output shows: Acquire, Use, Release
   println()
 
-  // --- LIFO 解放順序 ---
-  // 後から取得したリソースが先に解放される
-  println("--- LIFO 解放順序 ---")
+  // --- LIFO release order ---
+  // Resources acquired later are released first
+  println("--- LIFO Release Order ---")
   Resource.run {
     val a = Resource.install {
-      println("  A を取得")
+      println("  Acquiring A")
       "A"
-    } { name => println(s"  $name を解放") }
+    } { name => println(s"  Releasing $name") }
 
     val b = Resource.install {
-      println("  B を取得")
+      println("  Acquiring B")
       "B"
-    } { name => println(s"  $name を解放") }
+    } { name => println(s"  Releasing $name") }
 
     val c = Resource.install {
-      println("  C を取得")
+      println("  Acquiring C")
       "C"
-    } { name => println(s"  $name を解放") }
+    } { name => println(s"  Releasing $name") }
 
-    println(s"  $a, $b, $c を使用中")
+    println(s"  Using $a, $b, $c")
   }
-  // 解放順序: C → B → A（取得の逆順）
+  // Release order: C, B, A (reverse of acquisition)
   println()
 
-  // --- Resource.acquire: Closeable の自動クローズ ---
-  println("--- Resource.acquire（Closeable） ---")
+  // --- Resource.acquire: auto-close Closeable objects ---
+  println("--- Resource.acquire (Closeable) ---")
 
-  // デモ用のシンプルな Closeable
+  // A simple Closeable for demonstration
   class MyConnection(val name: String) extends Closeable:
-    println(s"  コネクション '$name' をオープン")
-    def query(sql: String): String = s"$name から '$sql' の結果"
-    def close(): Unit = println(s"  コネクション '$name' をクローズ")
+    println(s"  Connection '$name' opened")
+    def query(sql: String): String = s"Result of '$sql' from $name"
+    def close(): Unit = println(s"  Connection '$name' closed")
 
   Resource.run {
     val conn = Resource.acquire(MyConnection("db1"))
     val result = conn.query("SELECT * FROM users")
     println(s"  $result")
   }
-  // ブロック終了時にコネクションが自動的にクローズされる
+  // Connection is automatically closed when the block exits
   println()
 
-  // --- Resource.ensuring: リソースなしのファイナライザ ---
+  // --- Resource.ensuring: run a finalizer without a resource ---
   println("--- Resource.ensuring ---")
   Resource.run {
     Resource.ensuring {
-      println("  ファイナライザが実行された！")
+      println("  Finalizer ran!")
     }
-    println("  何らかの処理を実行中...")
+    println("  Doing some work...")
   }
   println()
 
-  // --- Resource + Raise: エラー発生時でもクリーンアップが実行される ---
-  println("--- Resource + Raise の連携 ---")
+  // --- Resource + Raise: cleanup happens even on error ---
+  println("--- Resource + Raise interaction ---")
   val result: Either[String, String] = Raise.either {
     Resource.run {
       val r = Resource.install {
-        println("  貴重なリソースを取得")
-        "貴重なリソース"
-      } { name => println(s"  $name を解放（エラー後でも！）") }
+        println("  Acquiring precious resource")
+        "precious"
+      } { name => println(s"  Releasing $name (even after error!)") }
 
-      println(s"  $r を使用中...")
-      Raise.raise("何かがおかしくなった！")
-      s"$r で成功" // ここには到達しない
+      println(s"  Using $r...")
+      Raise.raise("Something went wrong!")
+      s"Success with $r" // never reached
     }
   }
-  println(s"結果: $result")
+  println(s"Result: $result")
   println()
 
-  // --- 複数リソース + エラー ---
-  println("--- 複数リソース + エラー ---")
+  // --- Multiple resources with error ---
+  println("--- Multiple resources + error ---")
   val result2: Either[String, String] = Raise.either {
     Resource.run {
       val db = Resource.install {
-        println("  データベースをオープン")
+        println("  Opening database")
         "db"
-      } { name => println(s"  $name をクローズ") }
+      } { name => println(s"  Closing $name") }
 
       val file = Resource.install {
-        println("  ファイルをオープン")
+        println("  Opening file")
         "file"
-      } { name => println(s"  $name をクローズ") }
+      } { name => println(s"  Closing $name") }
 
       val cache = Resource.install {
-        println("  キャッシュを初期化")
+        println("  Initializing cache")
         "cache"
-      } { name => println(s"  $name をクリア") }
+      } { name => println(s"  Clearing $name") }
 
-      println(s"  $db, $file, $cache で処理中...")
-      Raise.raise("予期しないエラー！")
-      "完了"
+      println(s"  Processing with $db, $file, $cache...")
+      Raise.raise("Unexpected failure!")
+      "done"
     }
   }
-  println(s"結果: $result2")
-  // 3つのリソースすべてがエラー発生後も逆順で解放される
+  println(s"Result: $result2")
+  // All three resources are released in reverse order, even with an error
   println()
 
-  println("=== レッスン 7 終了 ===")
+  println("=== End of Lesson 7 ===")

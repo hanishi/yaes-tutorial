@@ -1,106 +1,106 @@
-// レッスン 8: Async による構造化並行処理
+// Lesson 8: Structured Concurrency with Async
 //
-// 注意: このレッスンは Java 24 以上が必要です（仮想スレッドと StructuredTaskScope）。
-// Java 24 未満の場合はレッスン 1〜7 をお楽しみください。
+// NOTE: This lesson requires Java 24+ (for virtual threads and StructuredTaskScope).
+// If you're on an earlier JVM, lessons 1-7 still work fine.
 //
-// Async エフェクトは構造化並行処理を提供します。フォークされた全ファイバーは
-// 親スコープが終了する前に完了（またはキャンセル）されることが保証されます。
+// The Async effect provides structured concurrency: all forked fibers are
+// guaranteed to complete (or be cancelled) before the parent scope exits.
 
 import in.rcard.yaes.*
 import scala.concurrent.duration.*
 
 @main def lesson8(): Unit =
-  println("=== レッスン 8: 構造化並行処理 ===")
+  println("=== Lesson 8: Structured Concurrency with Async ===")
   println()
 
-  // --- Async.run + Async.fork: ファイバーの基本 ---
+  // --- Async.run + Async.fork: basic fiber creation ---
   println("--- Async.fork ---")
   Async.run {
     val fiber1 = Async.fork("worker-1") {
-      println(s"  [${Thread.currentThread().getName}] タスク1を実行中...")
+      println(s"  [${Thread.currentThread().getName}] Working on task 1...")
       Async.delay(100.millis)
-      "結果1"
+      "Result 1"
     }
 
     val fiber2 = Async.fork("worker-2") {
-      println(s"  [${Thread.currentThread().getName}] タスク2を実行中...")
+      println(s"  [${Thread.currentThread().getName}] Working on task 2...")
       Async.delay(150.millis)
-      "結果2"
+      "Result 2"
     }
 
-    // .value はファイバーの結果をアンラップ（キャンセル時は Cancelled を raise）
-    val r1: String = Raise.recover(fiber1.value)(_ => "キャンセル済み")
-    val r2: String = Raise.recover(fiber2.value)(_ => "キャンセル済み")
+    // .value unwraps the fiber result (or raises Cancelled if cancelled)
+    val r1: String = Raise.recover(fiber1.value)(_ => "cancelled")
+    val r2: String = Raise.recover(fiber2.value)(_ => "cancelled")
     println(s"  fiber1: $r1, fiber2: $r2")
   }
   println()
 
-  // --- Async.par: 2つのタスクを並列実行し、両方の完了を待つ ---
+  // --- Async.par: run two tasks in parallel, wait for both ---
   println("--- Async.par ---")
   Async.run {
     val (a, b) = Async.par(
       {
-        println(s"  [${Thread.currentThread().getName}] A を計算中...")
+        println(s"  [${Thread.currentThread().getName}] Computing A...")
         Async.delay(100.millis)
         42
       },
       {
-        println(s"  [${Thread.currentThread().getName}] B を計算中...")
+        println(s"  [${Thread.currentThread().getName}] Computing B...")
         Async.delay(200.millis)
-        "こんにちは"
+        "hello"
       }
     )
-    println(s"  par の結果: ($a, $b)") // (42, こんにちは)
+    println(s"  par results: ($a, $b)") // (42, hello)
   }
   println()
 
-  // --- Async.race: 2つのタスクを実行し、先に終わった方の結果を採用 ---
+  // --- Async.race: run two tasks, keep the first result, cancel the other ---
   println("--- Async.race ---")
   Async.run {
     val winner = Async.race(
       {
-        println(s"  [${Thread.currentThread().getName}] 速いタスク...")
+        println(s"  [${Thread.currentThread().getName}] Fast task...")
         Async.delay(50.millis)
-        "速い"
+        "fast"
       },
       {
-        println(s"  [${Thread.currentThread().getName}] 遅いタスク...")
+        println(s"  [${Thread.currentThread().getName}] Slow task...")
         Async.delay(500.millis)
-        "遅い"
+        "slow"
       }
     )
-    println(s"  勝者: $winner") // 速い（通常）
+    println(s"  Race winner: $winner") // fast (usually)
   }
   println()
 
-  // --- Async.timeout: タスクが時間内に完了しなければ失敗 ---
+  // --- Async.timeout: fail if a task takes too long ---
   println("--- Async.timeout ---")
   Async.run {
-    // 成功: タイムアウト内に完了
+    // Successful case: completes within timeout
     val ok: Either[Async.TimedOut, String] = Raise.either {
       Async.timeout(1.second) {
         Async.delay(100.millis)
-        "時間内に完了"
+        "completed in time"
       }
     }
-    println(s"  タイムアウト内: $ok") // Right(時間内に完了)
+    println(s"  Within timeout: $ok") // Right(completed in time)
 
-    // タイムアウト: 時間超過
+    // Timeout case: takes too long
     val timedOut: Either[Async.TimedOut, String] = Raise.either {
       Async.timeout(100.millis) {
         Async.delay(2.seconds)
-        "これは完了しない"
+        "this won't complete"
       }
     }
-    println(s"  タイムアウト超過: $timedOut") // Left(TimedOut)
+    println(s"  Exceeded timeout: $timedOut") // Left(TimedOut)
   }
   println()
 
-  // --- Async と他のエフェクトの組み合わせ ---
-  println("--- Async + 他のエフェクト ---")
+  // --- Combining Async with other effects ---
+  println("--- Async + other effects ---")
   Output.run {
     Async.run {
-      Output.printLn("並行計算を開始...")
+      Output.printLn("Starting concurrent computation...")
 
       val (sum, product) = Async.par(
         {
@@ -113,10 +113,10 @@ import scala.concurrent.duration.*
         }
       )
 
-      Output.printLn(s"1〜100 の合計 = $sum")
-      Output.printLn(s"1〜10 の積 = $product")
+      Output.printLn(s"Sum 1..100 = $sum")
+      Output.printLn(s"Product 1..10 = $product")
     }
   }
   println()
 
-  println("=== レッスン 8 終了 ===")
+  println("=== End of Lesson 8 ===")

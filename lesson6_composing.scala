@@ -1,44 +1,43 @@
-// レッスン 6: 複数エフェクトの合成
+// Lesson 6: Composing Multiple Effects
 //
-// 実際のプログラムでは複数のエフェクトを同時に使います。
-// YAES では必要なエフェクトをコンテキストパラメータとして宣言し、
-// ハンドラをネストして実行します。
+// Real programs use multiple effects together. YAES lets you declare
+// all required effects as context parameters and nest handlers to run them.
 
 import in.rcard.yaes.*
 
 @main def lesson6(): Unit =
-  println("=== レッスン 6: 複数エフェクトの合成 ===")
+  println("=== Lesson 6: Composing Multiple Effects ===")
   println()
 
-  // --- 複数エフェクトを持つ関数 ---
-  println("--- マルチエフェクト関数 ---")
+  // --- Functions with multiple effects ---
+  println("--- Multi-effect functions ---")
 
-  // この関数は Random, Output, Raise を必要とする
+  // This function requires Random, Output, and Raise
   def randomGreeting(name: String)(using Random, Output, Raise[String]): String =
-    if name.isEmpty then Raise.raise("名前が空です")
+    if name.isEmpty then Raise.raise("Name cannot be empty")
     val roll = (Random.nextInt % 3).abs
     val greeting = roll match
-      case 0 => s"こんにちは、${name}さん！"
-      case 1 => s"やあ、${name}さん！"
-      case _ => s"ようこそ、${name}さん！"
+      case 0 => s"Hello, $name!"
+      case 1 => s"Hey there, $name!"
+      case _ => s"Greetings, $name!"
     Output.printLn(greeting)
     greeting
 
-  // ハンドラをネストして全エフェクトを提供
+  // Nest handlers to provide all effects
   val result: Either[String, String] = Output.run {
     Random.run {
       Raise.either {
-        randomGreeting("花子")
+        randomGreeting("Alice")
       }
     }
   }
-  println(s"結果: $result")
+  println(s"Result: $result")
   println()
 
-  // --- コイントス当てゲーム ---
-  // Random（コイン投げ）、State（スコア管理）、
-  // Output（メッセージ表示）、Raise（ゲームオーバー）を組み合わせる
-  println("--- コイントス当てゲーム ---")
+  // --- Coin Flip Guessing Game ---
+  // Combines: Random (coin flip), State (score tracking),
+  //           Output (messages), Raise (game over)
+  println("--- Coin Flip Guessing Game ---")
 
   case class Score(correct: Int, total: Int):
     def hit: Score = Score(correct + 1, total + 1)
@@ -50,37 +49,37 @@ import in.rcard.yaes.*
 
   def playRound(guess: Boolean)(using Random, State[Score], Output): Unit =
     val coin = flipCoin()
-    val coinStr = if coin then "表" else "裏"
-    val guessStr = if guess then "表" else "裏"
+    val coinStr = if coin then "Heads" else "Tails"
+    val guessStr = if guess then "Heads" else "Tails"
     if coin == guess then
-      Output.printLn(s"  コイン: $coinStr, 予想: $guessStr → 正解！")
+      Output.printLn(s"  Coin: $coinStr, Guess: $guessStr -> Correct!")
       State.update[Score](_.hit)
     else
-      Output.printLn(s"  コイン: $coinStr, 予想: $guessStr → 不正解")
+      Output.printLn(s"  Coin: $coinStr, Guess: $guessStr -> Wrong!")
       State.update[Score](_.miss)
 
   def playGame(rounds: Int)(using Random, State[Score], Output): Score =
     for i <- 1 to rounds do
-      // デモのため表と裏を交互に予想
+      // Alternate guessing heads and tails for demonstration
       val guess = i % 2 == 0
       playRound(guess)
     State.get[Score]
 
-  // 全エフェクトを合成してゲームを実行
+  // Run the game with all effects composed
   val (finalScore, gameResult) = Output.run {
     Random.run {
       State.run(Score(0, 0)) {
-        Output.printLn("6ラウンドのコイントスゲーム開始...")
+        Output.printLn("Playing 6 rounds of coin flip...")
         playGame(6)
       }
     }
   }
-  println(s"最終スコア: $finalScore")
-  println(s"ゲーム結果: $gameResult")
+  println(s"Final score: $finalScore")
+  println(s"Game result: $gameResult")
   println()
 
-  // --- 複数エフェクトとエラーハンドリングの組み合わせ ---
-  println("--- 多層エラーハンドリング ---")
+  // --- Nested error handling with multiple effects ---
+  println("--- Multi-layer error handling ---")
 
   sealed trait GameError
   case object TooManyMisses extends GameError
@@ -88,12 +87,12 @@ import in.rcard.yaes.*
 
   def strictGame(rounds: Int)(using Random, State[Score], Output, Raise[GameError]): Score =
     for i <- 1 to rounds do
-      val guess = flipCoin() // ランダムに予想
+      val guess = flipCoin() // guess randomly
       playRound(guess)
       val score = State.get[Score]
       val misses = score.total - score.correct
       if misses >= 3 then
-        Output.printLn(s"  ミスが${misses}回！ゲームオーバー。")
+        Output.printLn(s"  Too many misses ($misses)! Game over.")
         Raise.raise(TooManyMisses)
     State.get[Score]
 
@@ -101,7 +100,7 @@ import in.rcard.yaes.*
     Random.run {
       Raise.either {
         State.run(Score(0, 0)) {
-          Output.printLn("厳格モード（ミス3回で終了）...")
+          Output.printLn("Playing strict game (max 3 misses)...")
           strictGame(10)
         }
       }
@@ -109,11 +108,11 @@ import in.rcard.yaes.*
   }
   strictResult match
     case Right((finalState, score)) =>
-      println(s"完走！ スコア: $score")
+      println(s"Completed! Score: $score")
     case Left(TooManyMisses) =>
-      println(s"ゲームオーバー: ミスが多すぎます！")
+      println(s"Game over: too many misses!")
     case Left(InvalidInput(msg)) =>
-      println(s"不正な入力: $msg")
+      println(s"Invalid input: $msg")
   println()
 
-  println("=== レッスン 6 終了 ===")
+  println("=== End of Lesson 6 ===")
