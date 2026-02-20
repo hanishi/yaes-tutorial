@@ -1,12 +1,10 @@
 # YAES Tutorial
 
-A hands-on tutorial for learning [yaes](https://github.com/rcardin/yaes) (Yet Another Effect System) — an algebraic effect system for Scala 3 that uses context parameters for direct-style effect management.
+A hands-on tutorial for learning [YAES](https://github.com/rcardin/yaes) (Yet Another Effect System) — an algebraic effect system for Scala 3 that uses context parameters for direct-style effect management.
 
-> **Why this tutorial exists**
->
-> There is virtually no Japanese-language documentation on algebraic effect systems for Scala. Most resources on Cats Effect and ZIO are in English, and yaes — a newcomer that embraces Scala 3's native features over monadic abstractions — has none at all. This tutorial fills that gap with a hands-on, lesson-by-lesson introduction written entirely in Japanese. We believe yaes's lightweight, non-framework approach will resonate with Japanese developers who value clean, pragmatic code over heavy abstractions.
+YAES is not a framework — it's just Scala. No monads, no special syntax, no ecosystem lock-in. It uses Scala 3 context parameters (`using`) to track effects at compile time while letting you write ordinary code with `if`, `while`, and `try`.
 
-**[日本語版はこちら / Japanese version](ja/README.md)**
+**[日本語版 / Japanese version](ja/README.md)** — This tutorial is also available in Japanese. There is virtually no Japanese-language documentation on algebraic effect systems for Scala, and this project aims to fill that gap.
 
 ## What is an Effect System?
 
@@ -23,11 +21,9 @@ Pure functions just compute outputs from inputs, but real programs involve **sid
 
 An effect system **tracks and controls these side effects through the type system**.
 
-### Traditional Approaches and Their Trade-offs
+### Approaches to Effect Management in Scala
 
-Scala has two major traditions for managing effects.
-
-**1. Monadic (Cats Effect / ZIO)**
+**Monadic (Cats Effect / ZIO)**
 
 ```scala
 // ZIO example
@@ -38,26 +34,22 @@ def program: ZIO[Console & Random, IOException, Unit] =
   yield ()
 ```
 
-The monadic style composes operations with `for`/`yield` (flatMap chains). It's type-safe and tracks effects well, but comes with costs:
+The monadic style composes operations with `for`/`yield` (flatMap chains). It's type-safe and tracks effects well, but the code must be written in a specific style. Normal control flow (`if`/`while`/`try`) doesn't work directly — you use library-provided combinators instead. The ecosystem is mature, with extensive libraries and community support.
 
-- **`for`/`yield` required** — you can't use normal `if`/`while`/`try`; you need special combinators
-- **Steep learning curve** — monad transformers, fibers, scopes, and other framework-specific concepts
-- **Ecosystem lock-in** — your entire codebase depends on the specific effect type
-
-**2. Direct style (yaes / Kyo etc.)**
+**Direct style (YAES / Kyo etc.)**
 
 ```scala
-// yaes example
+// YAES example
 def program(using Output, Random): Unit =
   val n = Random.nextInt
   Output.printLn(s"Random: $n")
 ```
 
-Direct style lets you write effects as **ordinary Scala code**. No `for`/`yield` needed — `if`/`while`/`try` just work.
+Direct style lets you write effects as **ordinary Scala code**. No `for`/`yield` needed — `if`/`while`/`try` just work. The trade-off is that these libraries are newer, with smaller ecosystems and less production track record. YAES's `Async` effect also requires Java 24+, which may not be available in all environments.
 
-### Why yaes?
+### Why YAES?
 
-| Feature | yaes | Cats Effect | ZIO |
+| Feature | YAES | Cats Effect | ZIO |
 |---------|------|-------------|-----|
 | Style | Direct | Monadic | Monadic |
 | Effect declaration | `using` parameters | Type parameter `F[_]` | `ZIO[R, E, A]` |
@@ -66,7 +58,7 @@ Direct style lets you write effects as **ordinary Scala code**. No `for`/`yield`
 | Scala 3 usage | Full use of context functions | Scala 2 heritage | Scala 2 heritage |
 | Dependencies | None (stdlib only) | cats-core | zio |
 
-yaes's key insight is **using Scala 3 context parameters (`using`) as the effect mechanism itself**. No special wrapper types or monads needed — ordinary functions become effectful functions.
+YAES's key insight is **using Scala 3 context parameters (`using`) as the effect mechanism itself**. No special wrapper types or monads needed — ordinary functions become effectful functions.
 
 ### Exceptions vs Either vs Raise — The Real Difference
 
@@ -141,7 +133,7 @@ int divide(int a, int b) throws ArithmeticException {
 
 At first glance, this is the same idea as `Raise` — make errors visible in the type and let the compiler enforce handling. But Java's checked exceptions failed in practice. Why?
 
-| | Checked Exceptions (Java) | Raise (yaes) |
+| | Checked Exceptions (Java) | Raise (YAES) |
 |---|---|---|
 | **Error type composition** | Requires a common superclass; everyone ends up with `throws Exception` | `Raise[A]` and `Raise[B]` declared independently |
 | **Propagation boilerplate** | Every method in the chain must declare `throws` | `using Raise[E]` propagates implicitly via context parameters |
@@ -158,11 +150,11 @@ def divide(a: Int, b: Int): Int raises String =
   a / b
 ```
 
-## How yaes Works
+## How YAES Works
 
 ### Core Structure
 
-The core of yaes is simple:
+The core of YAES is simple:
 
 ```scala
 // A wrapper representing the "capability" to use an effect
@@ -212,7 +204,7 @@ Handlers serve three roles:
 
 ### How `Raise` Works Internally
 
-`Raise` is yaes's core effect. It uses the boundary/break mechanism for short-circuiting without exception overhead:
+`Raise` is YAES's core effect. It uses the boundary/break mechanism for short-circuiting without exception overhead:
 
 ```
 Raise.either { ... Raise.raise("error") ... }
@@ -448,6 +440,6 @@ ja/                            # Japanese version (日本語版)
 
 ## Links
 
-- [yaes GitHub](https://github.com/rcardin/yaes) — Source code and documentation
-- [Scala 3 Context Functions](https://docs.scala-lang.org/scala3/reference/contextual/context-functions.html) — The language feature yaes is built on
+- [YAES GitHub](https://github.com/rcardin/yaes) — Source code and documentation
+- [Scala 3 Context Functions](https://docs.scala-lang.org/scala3/reference/contextual/context-functions.html) — The language feature YAES is built on
 - [JEP 505: Structured Concurrency](https://openjdk.org/jeps/505) — The Java 24 feature behind `Async`
