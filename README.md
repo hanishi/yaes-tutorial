@@ -121,6 +121,37 @@ def calculate(x: Int): Int raises String =
 | **Either** | flatMap が必要 | 手動（flatMap） | あり | 高速 |
 | **Raise** | 簡潔 | 自動 | あり | 高速（boundary/break） |
 
+### Java 経験者向け: 検査例外との比較
+
+Java から Scala に来た人なら、検査例外（checked exception）を思い出すかもしれません。
+
+```java
+// Java の検査例外 — エラーがメソッドシグネチャに現れる
+int divide(int a, int b) throws ArithmeticException {
+    if (b == 0) throw new ArithmeticException("ゼロ除算");
+    return a / b;
+}
+```
+
+一見、`Raise` と同じ発想です。「エラーの可能性を型で表現し、コンパイラが処理を強制する」。しかし Java の検査例外は実際には失敗しました。なぜでしょうか？
+
+| | 検査例外（Java） | Raise（yaes） |
+|---|---|---|
+| **エラー型の合成** | 共通の親クラスが必要。結局 `throws Exception` になりがち | `Raise[A]` と `Raise[B]` を独立に宣言できる |
+| **伝播の手間** | 全メソッドに `throws` を書く必要がある | `using Raise[E]` がコンテキストパラメータで暗黙に伝播 |
+| **ラムダとの相性** | `stream.map(x -> mightThrow(x))` がコンパイルエラー | ラムダ内でも自然に使える |
+| **エラーの値** | 例外オブジェクトのみ | 任意の型（文字列、列挙型、ADT など） |
+| **パフォーマンス** | スタックトレース生成のコスト | boundary/break でジャンプ（スタックトレースなし） |
+
+Scala は Java の検査例外を意図的に廃止しました。`Raise` は検査例外の**正しかった部分**（コンパイラによるエラー追跡）を、**問題だった部分**（ボイラープレート、ラムダ非対応、合成の困難さ）なしに復活させたものと言えます。
+
+```scala
+// Java 検査例外の発想を、Scala 3 で正しく実現したもの
+def divide(a: Int, b: Int): Int raises String =
+  if b == 0 then Raise.raise("ゼロ除算")
+  a / b
+```
+
 ## yaes の仕組み
 
 ### コアの構造
