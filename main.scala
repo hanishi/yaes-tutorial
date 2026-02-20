@@ -14,6 +14,7 @@
 //   lesson6 — 複数エフェクトの合成
 //   lesson7 — リソース管理
 //   lesson8 — 構造化並行処理（要 Java 24+）
+//   lesson9 — テスタビリティ
 
 @main def index(): Unit =
   println("YAES チュートリアル")
@@ -28,3 +29,7 @@
   println("  scala-cli run . --main-class lesson6   — エフェクトの合成")
   println("  scala-cli run . --main-class lesson7   — リソース管理")
   println("  scala-cli run . --main-class lesson8   — 構造化並行処理（要 Java 24+）")
+  println("  scala-cli run . --main-class lesson9   — テスタビリティ")
+  println()
+  println("テストの実行:")
+  println("  scala-cli test .")

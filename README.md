@@ -62,6 +62,65 @@ def program(using Output, Random): Unit =
 
 yaes の最大の特徴は **Scala 3 のコンテキストパラメータ（`using`）をエフェクトの仕組みそのものとして使う**ことです。特別なラッパー型やモナドは不要で、普通の関数がそのままエフェクトフルな関数になります。
 
+### 例外 vs Either vs Raise — 本当の違い
+
+エフェクトシステムに初めて触れる人がよく感じる疑問があります。
+
+> 「例外でいいのでは？」「Either と何が違うの？」
+
+この疑問はもっともです。3つのアプローチを同じ例で比較してみましょう。
+
+**例外 — 書きやすいが、何が起きるか型から分からない**
+
+```scala
+def divide(a: Int, b: Int): Int =
+  if b == 0 then throw new ArithmeticException("ゼロ除算")
+  a / b
+
+def calculate(x: Int): Int =
+  divide(divide(x, 2), 3)  // 簡潔だが、エラーの可能性が型に現れない
+```
+
+例外はコードが簡潔で、エラーが自動的に呼び出し元に伝播します。しかし `calculate` の型シグネチャ `Int => Int` からは、この関数が失敗する可能性があることが分かりません。コンパイラはエラー処理を強制しません。
+
+**Either — 型安全だが、コードが煩雑になる**
+
+```scala
+def divide(a: Int, b: Int): Either[String, Int] =
+  if b == 0 then Left("ゼロ除算") else Right(a / b)
+
+def calculate(x: Int): Either[String, Int] =
+  divide(x, 2).flatMap(r => divide(r, 3))  // flatMap の連鎖が必要
+```
+
+`Either` はエラーの可能性を型で表現します。コンパイラがエラー処理を強制してくれます。しかし代償として、全ての計算を `flatMap` で繋ぐ必要があります。処理が増えるほどネストが深くなり、普通のコードとは見た目がかけ離れていきます。
+
+**Raise — 例外の書きやすさ + Either の型安全性**
+
+```scala
+def divide(a: Int, b: Int): Int raises String =
+  if b == 0 then Raise.raise("ゼロ除算")
+  a / b
+
+def calculate(x: Int): Int raises String =
+  divide(divide(x, 2), 3)  // 簡潔、かつエラーの可能性が型に現れる
+```
+
+`Raise` は**両方の良いところを兼ね備えています**。
+
+- 例外のように普通の関数呼び出しで書ける — `flatMap` は不要
+- エラーは自動的に呼び出し元に伝播する — 明示的な受け渡し不要
+- `raises String` が型シグネチャに現れる — コンパイラがエラー処理を強制
+- 内部的には `boundary`/`break` を使用 — 例外より高速（スタックトレース生成なし）
+
+つまり、**Raise は「例外の人間工学」と「Either の型安全性」を同時に実現する仕組み**です。「例外でいい」でも「Either でいい」でもなく、両方の利点を取れるところが本質的な違いです。
+
+| | 書きやすさ | エラーの伝播 | 型安全性 | パフォーマンス |
+|---|---|---|---|---|
+| **例外** | 簡潔 | 自動 | なし | スタックトレースのコスト |
+| **Either** | flatMap が必要 | 手動（flatMap） | あり | 高速 |
+| **Raise** | 簡潔 | 自動 | あり | 高速（boundary/break） |
+
 ## yaes の仕組み
 
 ### コアの構造
@@ -231,6 +290,73 @@ Async.run {
 }
 ```
 
+## テスタビリティ — エフェクトシステム最大の実用的メリット
+
+エフェクトシステムを使う最も実用的な理由は**テスト容易性**です。
+
+エフェクトは `using` パラメータで注入されるため、テスト時に本物の実装をモック（偽物）に差し替えられます。これは DI（依存性注入）コンテナなしで実現される、言語レベルの依存性注入です。
+
+### モックの作り方
+
+各エフェクトの `Unsafe` トレイトを実装して `Yaes` で包むだけです。
+
+```scala
+// 常に同じ値を返す Random モック
+def fixedRandom(value: Int): Random =
+  new Yaes(new Random.Unsafe {
+    def nextInt(): Int = value
+    def nextBoolean(): Boolean = value % 2 == 0
+    def nextDouble(): Double = value.toDouble
+    def nextLong(): Long = value.toLong
+  })
+
+// 出力をバッファに記録する Output モック
+def bufferedOutput(): (Output, () => List[String]) =
+  val buffer = scala.collection.mutable.ListBuffer.empty[String]
+  val output: Output = new Yaes(new Output.Unsafe {
+    def print(text: String): Unit = buffer += text
+    def printLn(text: String): Unit = buffer += text
+    def printErr(text: String): Unit = ()
+    def printErrLn(text: String): Unit = ()
+  })
+  (output, () => buffer.toList)
+```
+
+### テストの書き方
+
+```scala
+class MyTests extends munit.FunSuite:
+
+  // Raise: either でエラーパスを検証
+  test("空のユーザー名を拒否する") {
+    val result = Raise.either { validateUsername("") }
+    assertEquals(result, Left("ユーザー名は必須です"))
+  }
+
+  // Random: モックを注入して決定的にテスト
+  test("出目 6 で大当たり") {
+    given Random = fixedRandom(5) // (5 % 6).abs + 1 = 6
+    val result = Raise.either { luckyMessage() }
+    assertEquals(result, Right("大当たり！"))
+  }
+
+  // Output: バッファで出力を検証
+  test("正しいメッセージを出力する") {
+    val (testOutput, getLines) = bufferedOutput()
+    given Output = testOutput
+    greetUser("花子")
+    assert(getLines().head.contains("花子"))
+  }
+
+  // State: 最終状態と結果の両方を検証
+  test("正しい回数インクリメントする") {
+    val (finalState, result) = State.run(0) { incrementN(5) }
+    assertEquals(finalState, 5)
+  }
+```
+
+フレームワーク固有のモック機構（Mockito 等）は不要です。エフェクトの仕組み自体がモックをネイティブにサポートしています。
+
 ## 前提条件
 
 - [scala-cli](https://scala-cli.virtuslab.org/) がインストール済みであること
@@ -249,6 +375,7 @@ Async.run {
 | lesson6  | **エフェクトの合成** — 複数エフェクトの組み合わせ、コイントスゲーム |
 | lesson7  | **リソース管理** — `Resource.install`, `acquire`, LIFO 解放順序 |
 | lesson8  | **構造化並行処理** — `Async.fork`, `par`, `race`, `timeout`（要 Java 24+） |
+| lesson9  | **テスタビリティ** — モック実装の作り方、エフェクトフルなコードのテスト手法 |
 
 ## 実行方法
 
@@ -260,22 +387,27 @@ scala-cli run . --main-class index
 scala-cli run . --main-class lesson1
 scala-cli run . --main-class lesson2
 # ...
-scala-cli run . --main-class lesson8
+scala-cli run . --main-class lesson9
+
+# テストを実行
+scala-cli test .
 ```
 
 ## プロジェクト構成
 
 ```
-project.scala                # ビルド設定（Scala 3.8.1 + yaes-core）
-main.scala                   # レッスン一覧
-lesson1_raise.scala          # Raise 基礎
-lesson2_raise_advanced.scala # Raise 応用
-lesson3_state.scala          # State
-lesson4_io.scala             # Output / Input
-lesson5_random_clock.scala   # Random / Clock
-lesson6_composing.scala      # エフェクト合成
-lesson7_resource.scala       # Resource
-lesson8_async.scala          # Async（要 Java 24+）
+project.scala                  # ビルド設定（Scala 3.8.1 + yaes-core + munit）
+main.scala                     # レッスン一覧
+lesson1_raise.scala            # Raise 基礎
+lesson2_raise_advanced.scala   # Raise 応用
+lesson3_state.scala            # State
+lesson4_io.scala               # Output / Input
+lesson5_random_clock.scala     # Random / Clock
+lesson6_composing.scala        # エフェクト合成
+lesson7_resource.scala         # Resource
+lesson8_async.scala            # Async（要 Java 24+）
+lesson9_testing.scala          # テスタビリティ
+tests/ExampleTests.test.scala  # munit テスト
 ```
 
 ## 参考リンク
